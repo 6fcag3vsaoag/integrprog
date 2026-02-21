@@ -77,6 +77,7 @@ ui_*.h
 ~$*.doc*
 ~$*.docx
 *.tmp
+*.docx
 
 # Auto-save files
 *.wbk
@@ -199,3 +200,4 @@ lab*/*.docx
 .venv/
 uv.lock
 uv.lock
+

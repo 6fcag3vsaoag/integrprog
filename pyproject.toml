@@ -1,10 +1,12 @@
 [project]
 name = "integrprog"
 version = "0.1.0"
-description = "Add your description here"
+description = "Integrated Programming Course Labs"
 readme = "README.md"
-requires-python = ">=3.14"
-dependencies = []
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.4.0",
+]
 
 [dependency-groups]
 dev = [
