@@ -63,7 +63,7 @@ class CountryDialog(QDialog):
         return Country(
             id=self.country.id,
             name=self.name_input.text().strip(),
-            code=self.code_input.text().strip().upper()
+            code=self.code_input.text().strip().upper() or None
         )
 
 

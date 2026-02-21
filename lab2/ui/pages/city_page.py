@@ -81,9 +81,7 @@ class CityDialog(QDialog):
         regions = self.db_manager.get_all_regions()
         self.region_combo.clear()
         for region in regions:
-            country = self.db_manager.get_country_by_id(region.country_id)
-            country_name = country.name if country else ""
-            self.region_combo.addItem(f"{region.name} ({country_name})", region.id)
+            self.region_combo.addItem(f"{region.name} ({region.country_name})", region.id)
     
     def get_city(self) -> City:
         """Возвращает город с данными из диалога."""
@@ -92,7 +90,7 @@ class CityDialog(QDialog):
             id=self.city.id,
             region_id=region_id,
             name=self.name_input.text().strip(),
-            postal_code=self.postal_input.text().strip()
+            postal_code=self.postal_input.text().strip() or None
         )
 
 
@@ -126,18 +124,11 @@ class CityPage(BasePage):
             id_item.setData(Qt.ItemDataRole.UserRole, city.id)
             self.table.setItem(row, 0, id_item)
             
-            # Названия региона и страны
-            region = self.db_manager.get_region_by_id(city.region_id)
-            region_name = region.name if region else ""
-            country_name = ""
-            if region:
-                country = self.db_manager.get_country_by_id(region.country_id)
-                country_name = country.name if country else ""
-            
-            region_item = QTableWidgetItem(region_name)
+            # Названия региона и страны (используем properties)
+            region_item = QTableWidgetItem(city.region_name)
             self.table.setItem(row, 1, region_item)
             
-            country_item = QTableWidgetItem(country_name)
+            country_item = QTableWidgetItem(city.country_name)
             self.table.setItem(row, 2, country_item)
             
             # Название города

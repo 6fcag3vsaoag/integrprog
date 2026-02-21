@@ -1,138 +1,170 @@
 """
-Модели данных для подсистемы ведения адресов клиентов.
-Определяет структуру таблиц базы данных.
+ORM модели данных для подсистемы ведения адресов клиентов.
+Определяет структуру таблиц базы данных с использованием SQLAlchemy.
 """
 
-from dataclasses import dataclass
-from typing import Optional
+from sqlalchemy import String, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import List, Optional
+
+from .base import Base
 
 
-@dataclass
-class Country:
+class Country(Base):
     """Модель страны."""
-    id: Optional[int] = None
-    name: str = ""
-    code: str = ""  # ISO код страны (например, "BY", "RU")
+    __tablename__ = "country"
     
-    def __post_init__(self):
-        """Валидация данных после инициализации."""
-        if self.name:
-            self.name = self.name.strip()
-        if self.code:
-            self.code = self.code.strip().upper()
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    code: Mapped[Optional[str]] = mapped_column(String(2), unique=True, nullable=True)
+    
+    # Связи
+    regions: Mapped[List["Region"]] = relationship(back_populates="country", cascade="all, delete-orphan")
+    
+    def __repr__(self) -> str:
+        return f"Country(id={self.id}, name='{self.name}', code='{self.code}')"
 
 
-@dataclass
-class Region:
+class Region(Base):
     """Модель региона/области/края."""
-    id: Optional[int] = None
-    country_id: Optional[int] = None
-    name: str = ""
+    __tablename__ = "region"
+    __table_args__ = (
+        UniqueConstraint('country_id', 'name', name='uq_region_country_name'),
+    )
     
-    def __post_init__(self):
-        """Валидация данных после инициализации."""
-        if self.name:
-            self.name = self.name.strip()
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    country_id: Mapped[int] = mapped_column(Integer, ForeignKey("country.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    
+    # Временное поле для хранения названия страны (используется при отображении)
+    _country_name: str = ""
+    
+    # Связи
+    country: Mapped["Country"] = relationship(back_populates="regions")
+    cities: Mapped[List["City"]] = relationship(back_populates="region", cascade="all, delete-orphan")
+    
+    @property
+    def country_name(self) -> str:
+        """Название страны."""
+        return self._country_name or (self.country.name if self.country else "")
+    
+    def __repr__(self) -> str:
+        return f"Region(id={self.id}, name='{self.name}', country_id={self.country_id})"
 
 
-@dataclass
-class City:
+class City(Base):
     """Модель города."""
-    id: Optional[int] = None
-    region_id: Optional[int] = None
-    name: str = ""
-    postal_code: str = ""
+    __tablename__ = "city"
+    __table_args__ = (
+        UniqueConstraint('region_id', 'name', name='uq_city_region_name'),
+    )
     
-    def __post_init__(self):
-        """Валидация данных после инициализации."""
-        if self.name:
-            self.name = self.name.strip()
-        if self.postal_code:
-            self.postal_code = self.postal_code.strip()
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    region_id: Mapped[int] = mapped_column(Integer, ForeignKey("region.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    postal_code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    
+    # Временные поля для хранения названий (используются при отображении)
+    _region_name: str = ""
+    _country_name: str = ""
+    
+    # Связи
+    region: Mapped["Region"] = relationship(back_populates="cities")
+    addresses: Mapped[List["Address"]] = relationship(back_populates="city", cascade="all, delete-orphan")
+    
+    @property
+    def region_name(self) -> str:
+        """Название региона."""
+        return self._region_name or (self.region.name if self.region else "")
+    
+    @property
+    def country_name(self) -> str:
+        """Название страны."""
+        if self._country_name:
+            return self._country_name
+        if self.region and self.region.country:
+            return self.region.country.name
+        return ""
+    
+    def __repr__(self) -> str:
+        return f"City(id={self.id}, name='{self.name}', postal_code='{self.postal_code}')"
 
 
-@dataclass
-class Address:
+class Address(Base):
     """Модель полного адреса."""
-    id: Optional[int] = None
-    city_id: Optional[int] = None
-    street: str = ""
-    house: str = ""
-    apartment: str = ""
-    client_name: str = ""
+    __tablename__ = "address"
     
-    # Дополнительные поля для отображения (из связанных таблиц)
-    city_name: str = ""
-    region_name: str = ""
-    country_name: str = ""
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    city_id: Mapped[int] = mapped_column(Integer, ForeignKey("city.id", ondelete="CASCADE"), nullable=False)
+    street: Mapped[str] = mapped_column(String(200), nullable=False)
+    house: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    apartment: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    client_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     
-    def __post_init__(self):
-        """Валидация данных после инициализации."""
-        if self.street:
-            self.street = self.street.strip()
-        if self.house:
-            self.house = self.house.strip()
-        if self.apartment:
-            self.apartment = self.apartment.strip()
-        if self.client_name:
-            self.client_name = self.client_name.strip()
+    # Временные поля для хранения названий (используются при отображении)
+    _city_name: str = ""
+    _region_name: str = ""
+    _country_name: str = ""
+    
+    # Связи
+    city: Mapped["City"] = relationship(back_populates="addresses")
     
     @property
     def full_address(self) -> str:
         """Возвращает отформатированный полный адрес."""
         parts = []
-        if self.country_name:
-            parts.append(self.country_name)
-        if self.region_name:
-            parts.append(self.region_name)
-        if self.city_name:
-            parts.append(self.city_name)
+        
+        # Используем кэшированные значения или связи
+        if self._country_name:
+            parts.append(self._country_name)
+        elif self.city and self.city.region and self.city.region.country:
+            parts.append(self.city.region.country.name)
+            
+        if self._region_name:
+            parts.append(self._region_name)
+        elif self.city and self.city.region:
+            parts.append(self.city.region.name)
+            
+        if self._city_name:
+            parts.append(self._city_name)
+        elif self.city:
+            parts.append(self.city.name)
+        
         if self.street:
             parts.append(self.street)
         if self.house:
             parts.append(f"д. {self.house}")
         if self.apartment:
             parts.append(f"кв. {self.apartment}")
+        
         return ", ".join(parts)
-
-
-# Схемы таблиц для создания базы данных
-TABLE_SCHEMAS = {
-    'country': '''
-        CREATE TABLE IF NOT EXISTS country (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            code TEXT(2) UNIQUE
-        )
-    ''',
-    'region': '''
-        CREATE TABLE IF NOT EXISTS region (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            country_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            FOREIGN KEY (country_id) REFERENCES country(id) ON DELETE CASCADE,
-            UNIQUE(country_id, name)
-        )
-    ''',
-    'city': '''
-        CREATE TABLE IF NOT EXISTS city (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            region_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            postal_code TEXT,
-            FOREIGN KEY (region_id) REFERENCES region(id) ON DELETE CASCADE,
-            UNIQUE(region_id, name)
-        )
-    ''',
-    'address': '''
-        CREATE TABLE IF NOT EXISTS address (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            city_id INTEGER NOT NULL,
-            street TEXT NOT NULL,
-            house TEXT,
-            apartment TEXT,
-            client_name TEXT,
-            FOREIGN KEY (city_id) REFERENCES city(id) ON DELETE CASCADE
-        )
-    '''
-}
+    
+    @property
+    def country_name(self) -> str:
+        """Название страны."""
+        if self._country_name:
+            return self._country_name
+        if self.city and self.city.region and self.city.region.country:
+            return self.city.region.country.name
+        return ""
+    
+    @property
+    def region_name(self) -> str:
+        """Название региона."""
+        if self._region_name:
+            return self._region_name
+        if self.city and self.city.region:
+            return self.city.region.name
+        return ""
+    
+    @property
+    def city_name(self) -> str:
+        """Название города."""
+        if self._city_name:
+            return self._city_name
+        if self.city:
+            return self.city.name
+        return ""
+    
+    def __repr__(self) -> str:
+        return f"Address(id={self.id}, client='{self.client_name}', street='{self.street}')"

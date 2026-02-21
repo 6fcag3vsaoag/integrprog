@@ -1,18 +1,21 @@
 """
 Менеджер базы данных для подсистемы ведения адресов клиентов.
-Обеспечивает подключение к SQLite и операции CRUD.
+Обеспечивает подключение к SQLite и операции CRUD с использованием SQLAlchemy.
 """
 
-import sqlite3
 from pathlib import Path
 from typing import Optional, List
 from contextlib import contextmanager
 
-from .models import Country, Region, City, Address, TABLE_SCHEMAS
+from sqlalchemy import create_engine, select, func, or_
+from sqlalchemy.orm import Session, sessionmaker, joinedload
+
+from .base import Base
+from .models import Country, Region, City, Address
 
 
 class DatabaseManager:
-    """Управляет подключением к SQLite и операциями с базой данных."""
+    """Управляет подключением к SQLite и операциями с базой данных через SQLAlchemy."""
     
     def __init__(self, db_path: str = None):
         """
@@ -28,336 +31,377 @@ class DatabaseManager:
             db_path = current_dir / "addresses.db"
         
         self.db_path = str(db_path)
-        self._connection: Optional[sqlite3.Connection] = None
-        self._initialize_database()
+        
+        # Создание движка SQLAlchemy
+        self.engine = create_engine(f"sqlite:///{self.db_path}", echo=False)
+        
+        # Фабрика сессий
+        self.SessionLocal = sessionmaker(bind=self.engine)
+        
+        # Создание таблиц
+        Base.metadata.create_all(self.engine)
     
     @contextmanager
-    def get_cursor(self):
-        """Контекстный менеджер для курсора базы данных."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
+    def get_session(self):
+        """Контекстный менеджер для сессии базы данных."""
+        session = self.SessionLocal()
         try:
-            yield cursor
-            conn.commit()
+            yield session
+            session.commit()
         except Exception as e:
-            conn.rollback()
+            session.rollback()
             raise e
-    
-    def _get_connection(self) -> sqlite3.Connection:
-        """Получить или создать подключение к базе данных."""
-        if self._connection is None:
-            self._connection = sqlite3.connect(self.db_path)
-            # Включить поддержку внешних ключей
-            self._connection.execute("PRAGMA foreign_keys = ON")
-            # Возвращать строки как словари
-            self._connection.row_factory = sqlite3.Row
-        return self._connection
-    
-    def _initialize_database(self):
-        """Создать таблицы, если они не существуют."""
-        with self.get_cursor() as cursor:
-            for table_name, schema in TABLE_SCHEMAS.items():
-                cursor.execute(schema)
+        finally:
+            session.close()
     
     def close(self):
         """Закрыть подключение к базе данных."""
-        if self._connection:
-            self._connection.close()
-            self._connection = None
+        self.engine.dispose()
     
     # ==================== CRUD для стран ====================
     
     def get_all_countries(self) -> List[Country]:
         """Получить все страны из базы данных."""
-        with self.get_cursor() as cursor:
-            cursor.execute("SELECT id, name, code FROM country ORDER BY name")
-            return [Country(id=row['id'], name=row['name'], code=row['code']) 
-                    for row in cursor.fetchall()]
+        with self.get_session() as session:
+            stmt = select(Country).order_by(Country.name)
+            # Делаем копии объектов, чтобы они были доступны после закрытия сессии
+            countries = []
+            for c in session.scalars(stmt).all():
+                countries.append(Country(id=c.id, name=c.name, code=c.code))
+            return countries
     
     def get_country_by_id(self, country_id: int) -> Optional[Country]:
         """Получить страну по ID."""
-        with self.get_cursor() as cursor:
-            cursor.execute("SELECT id, name, code FROM country WHERE id = ?", (country_id,))
-            row = cursor.fetchone()
-            if row:
-                return Country(id=row['id'], name=row['name'], code=row['code'])
+        with self.get_session() as session:
+            c = session.get(Country, country_id)
+            if c:
+                return Country(id=c.id, name=c.name, code=c.code)
             return None
     
     def add_country(self, country: Country) -> int:
         """Добавить новую страну и вернуть её ID."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO country (name, code) VALUES (?, ?)",
-                (country.name, country.code or None)
-            )
-            return cursor.lastrowid
+        with self.get_session() as session:
+            new_country = Country(name=country.name, code=country.code)
+            session.add(new_country)
+            session.flush()  # Получаем ID до коммита
+            return new_country.id
     
     def update_country(self, country: Country) -> bool:
         """Обновить существующую страну. Возвращает True при успехе."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "UPDATE country SET name = ?, code = ? WHERE id = ?",
-                (country.name, country.code or None, country.id)
-            )
-            return cursor.rowcount > 0
+        with self.get_session() as session:
+            existing = session.get(Country, country.id)
+            if existing:
+                existing.name = country.name
+                existing.code = country.code
+                return True
+            return False
     
     def delete_country(self, country_id: int) -> bool:
         """Удалить страну по ID. Возвращает True при успехе."""
-        with self.get_cursor() as cursor:
-            cursor.execute("DELETE FROM country WHERE id = ?", (country_id,))
-            return cursor.rowcount > 0
+        with self.get_session() as session:
+            country = session.get(Country, country_id)
+            if country:
+                session.delete(country)
+                return True
+            return False
     
     def search_countries(self, query: str) -> List[Country]:
         """Поиск стран по названию или коду."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "SELECT id, name, code FROM country WHERE name LIKE ? OR code LIKE ? ORDER BY name",
-                (f"%{query}%", f"%{query}%")
-            )
-            return [Country(id=row['id'], name=row['name'], code=row['code']) 
-                    for row in cursor.fetchall()]
+        with self.get_session() as session:
+            stmt = select(Country).where(
+                or_(
+                    Country.name.ilike(f"%{query}%"),
+                    Country.code.ilike(f"%{query}%")
+                )
+            ).order_by(Country.name)
+            countries = []
+            for c in session.scalars(stmt).all():
+                countries.append(Country(id=c.id, name=c.name, code=c.code))
+            return countries
     
     # ==================== CRUD для регионов ====================
     
     def get_all_regions(self, country_id: Optional[int] = None) -> List[Region]:
         """Получить все регионы, опционально отфильтрованные по стране."""
-        with self.get_cursor() as cursor:
+        with self.get_session() as session:
             if country_id:
-                cursor.execute(
-                    "SELECT id, country_id, name FROM region WHERE country_id = ? ORDER BY name",
-                    (country_id,)
-                )
+                stmt = select(Region).where(Region.country_id == country_id).order_by(Region.name)
             else:
-                cursor.execute("SELECT id, country_id, name FROM region ORDER BY name")
-            return [Region(id=row['id'], country_id=row['country_id'], name=row['name']) 
-                    for row in cursor.fetchall()]
+                stmt = select(Region).options(joinedload(Region.country)).order_by(Region.name)
+            regions = []
+            for r in session.scalars(stmt).all():
+                region = Region(id=r.id, country_id=r.country_id, name=r.name)
+                # Сохраняем название страны для отображения
+                if r.country:
+                    region._country_name = r.country.name
+                regions.append(region)
+            return regions
     
     def get_region_by_id(self, region_id: int) -> Optional[Region]:
         """Получить регион по ID."""
-        with self.get_cursor() as cursor:
-            cursor.execute("SELECT id, country_id, name FROM region WHERE id = ?", (region_id,))
-            row = cursor.fetchone()
-            if row:
-                return Region(id=row['id'], country_id=row['country_id'], name=row['name'])
+        with self.get_session() as session:
+            r = session.get(Region, region_id)
+            if r:
+                region = Region(id=r.id, country_id=r.country_id, name=r.name)
+                if r.country:
+                    region._country_name = r.country.name
+                return region
             return None
     
     def add_region(self, region: Region) -> int:
         """Добавить новый регион и вернуть его ID."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO region (country_id, name) VALUES (?, ?)",
-                (region.country_id, region.name)
-            )
-            return cursor.lastrowid
+        with self.get_session() as session:
+            new_region = Region(country_id=region.country_id, name=region.name)
+            session.add(new_region)
+            session.flush()
+            return new_region.id
     
     def update_region(self, region: Region) -> bool:
         """Обновить существующий регион. Возвращает True при успехе."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "UPDATE region SET country_id = ?, name = ? WHERE id = ?",
-                (region.country_id, region.name, region.id)
-            )
-            return cursor.rowcount > 0
+        with self.get_session() as session:
+            existing = session.get(Region, region.id)
+            if existing:
+                existing.country_id = region.country_id
+                existing.name = region.name
+                return True
+            return False
     
     def delete_region(self, region_id: int) -> bool:
         """Удалить регион по ID. Возвращает True при успехе."""
-        with self.get_cursor() as cursor:
-            cursor.execute("DELETE FROM region WHERE id = ?", (region_id,))
-            return cursor.rowcount > 0
+        with self.get_session() as session:
+            region = session.get(Region, region_id)
+            if region:
+                session.delete(region)
+                return True
+            return False
     
     def search_regions(self, query: str, country_id: Optional[int] = None) -> List[Region]:
         """Поиск регионов по названию."""
-        with self.get_cursor() as cursor:
+        with self.get_session() as session:
+            conditions = [Region.name.ilike(f"%{query}%")]
             if country_id:
-                cursor.execute(
-                    "SELECT id, country_id, name FROM region WHERE country_id = ? AND name LIKE ? ORDER BY name",
-                    (country_id, f"%{query}%")
-                )
-            else:
-                cursor.execute(
-                    "SELECT id, country_id, name FROM region WHERE name LIKE ? ORDER BY name",
-                    (f"%{query}%",)
-                )
-            return [Region(id=row['id'], country_id=row['country_id'], name=row['name']) 
-                    for row in cursor.fetchall()]
+                conditions.append(Region.country_id == country_id)
+            stmt = select(Region).where(*conditions).order_by(Region.name)
+            regions = []
+            for r in session.scalars(stmt).all():
+                region = Region(id=r.id, country_id=r.country_id, name=r.name)
+                if r.country:
+                    region._country_name = r.country.name
+                regions.append(region)
+            return regions
     
     # ==================== CRUD для городов ====================
     
     def get_all_cities(self, region_id: Optional[int] = None) -> List[City]:
         """Получить все города, опционально отфильтрованные по региону."""
-        with self.get_cursor() as cursor:
+        with self.get_session() as session:
             if region_id:
-                cursor.execute(
-                    "SELECT id, region_id, name, postal_code FROM city WHERE region_id = ? ORDER BY name",
-                    (region_id,)
-                )
+                stmt = select(City).where(City.region_id == region_id).order_by(City.name)
             else:
-                cursor.execute("SELECT id, region_id, name, postal_code FROM city ORDER BY name")
-            return [City(id=row['id'], region_id=row['region_id'], 
-                         name=row['name'], postal_code=row['postal_code']) 
-                    for row in cursor.fetchall()]
+                stmt = select(City).options(
+                    joinedload(City.region).joinedload(Region.country)
+                ).order_by(City.name)
+            cities = []
+            for c in session.scalars(stmt).all():
+                city = City(id=c.id, region_id=c.region_id, name=c.name, postal_code=c.postal_code)
+                if c.region:
+                    city._region_name = c.region.name
+                    if c.region.country:
+                        city._country_name = c.region.country.name
+                cities.append(city)
+            return cities
     
     def get_city_by_id(self, city_id: int) -> Optional[City]:
         """Получить город по ID."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "SELECT id, region_id, name, postal_code FROM city WHERE id = ?", 
-                (city_id,)
-            )
-            row = cursor.fetchone()
-            if row:
-                return City(id=row['id'], region_id=row['region_id'], 
-                           name=row['name'], postal_code=row['postal_code'])
+        with self.get_session() as session:
+            c = session.get(City, city_id)
+            if c:
+                city = City(id=c.id, region_id=c.region_id, name=c.name, postal_code=c.postal_code)
+                if c.region:
+                    city._region_name = c.region.name
+                    if c.region.country:
+                        city._country_name = c.region.country.name
+                return city
             return None
     
     def add_city(self, city: City) -> int:
         """Добавить новый город и вернуть его ID."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO city (region_id, name, postal_code) VALUES (?, ?, ?)",
-                (city.region_id, city.name, city.postal_code or None)
-            )
-            return cursor.lastrowid
+        with self.get_session() as session:
+            new_city = City(region_id=city.region_id, name=city.name, postal_code=city.postal_code)
+            session.add(new_city)
+            session.flush()
+            return new_city.id
     
     def update_city(self, city: City) -> bool:
         """Обновить существующий город. Возвращает True при успехе."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "UPDATE city SET region_id = ?, name = ?, postal_code = ? WHERE id = ?",
-                (city.region_id, city.name, city.postal_code or None, city.id)
-            )
-            return cursor.rowcount > 0
+        with self.get_session() as session:
+            existing = session.get(City, city.id)
+            if existing:
+                existing.region_id = city.region_id
+                existing.name = city.name
+                existing.postal_code = city.postal_code
+                return True
+            return False
     
     def delete_city(self, city_id: int) -> bool:
         """Удалить город по ID. Возвращает True при успехе."""
-        with self.get_cursor() as cursor:
-            cursor.execute("DELETE FROM city WHERE id = ?", (city_id,))
-            return cursor.rowcount > 0
+        with self.get_session() as session:
+            city = session.get(City, city_id)
+            if city:
+                session.delete(city)
+                return True
+            return False
     
     def search_cities(self, query: str, region_id: Optional[int] = None) -> List[City]:
         """Поиск городов по названию или почтовому индексу."""
-        with self.get_cursor() as cursor:
+        with self.get_session() as session:
+            conditions = [
+                or_(
+                    City.name.ilike(f"%{query}%"),
+                    City.postal_code.ilike(f"%{query}%")
+                )
+            ]
             if region_id:
-                cursor.execute(
-                    """SELECT id, region_id, name, postal_code FROM city 
-                       WHERE region_id = ? AND (name LIKE ? OR postal_code LIKE ?) 
-                       ORDER BY name""",
-                    (region_id, f"%{query}%", f"%{query}%")
-                )
-            else:
-                cursor.execute(
-                    """SELECT id, region_id, name, postal_code FROM city 
-                       WHERE name LIKE ? OR postal_code LIKE ? ORDER BY name""",
-                    (f"%{query}%", f"%{query}%")
-                )
-            return [City(id=row['id'], region_id=row['region_id'], 
-                         name=row['name'], postal_code=row['postal_code']) 
-                    for row in cursor.fetchall()]
+                conditions.append(City.region_id == region_id)
+            stmt = select(City).options(
+                joinedload(City.region).joinedload(Region.country)
+            ).where(*conditions).order_by(City.name)
+            cities = []
+            for c in session.scalars(stmt).all():
+                city = City(id=c.id, region_id=c.region_id, name=c.name, postal_code=c.postal_code)
+                if c.region:
+                    city._region_name = c.region.name
+                    if c.region.country:
+                        city._country_name = c.region.country.name
+                cities.append(city)
+            return cities
     
     # ==================== CRUD для адресов ====================
     
     def get_all_addresses(self) -> List[Address]:
         """Получить все адреса с данными о местоположении."""
-        with self.get_cursor() as cursor:
-            cursor.execute("""
-                SELECT a.id, a.city_id, a.street, a.house, a.apartment, a.client_name,
-                       c.name as city_name, r.name as region_name, co.name as country_name
-                FROM address a
-                JOIN city c ON a.city_id = c.id
-                JOIN region r ON c.region_id = r.id
-                JOIN country co ON r.country_id = co.id
-                ORDER BY a.client_name, a.street
-            """)
-            return [self._row_to_address(row) for row in cursor.fetchall()]
+        with self.get_session() as session:
+            stmt = select(Address).options(
+                joinedload(Address.city).joinedload(City.region).joinedload(Region.country)
+            ).order_by(Address.client_name, Address.street)
+            addresses = []
+            for a in session.scalars(stmt).all():
+                address = Address(
+                    id=a.id, city_id=a.city_id, street=a.street,
+                    house=a.house, apartment=a.apartment, client_name=a.client_name
+                )
+                if a.city:
+                    address._city_name = a.city.name
+                    if a.city.region:
+                        address._region_name = a.city.region.name
+                        if a.city.region.country:
+                            address._country_name = a.city.region.country.name
+                addresses.append(address)
+            return addresses
     
     def get_address_by_id(self, address_id: int) -> Optional[Address]:
         """Получить адрес по ID с данными о местоположении."""
-        with self.get_cursor() as cursor:
-            cursor.execute("""
-                SELECT a.id, a.city_id, a.street, a.house, a.apartment, a.client_name,
-                       c.name as city_name, r.name as region_name, co.name as country_name
-                FROM address a
-                JOIN city c ON a.city_id = c.id
-                JOIN region r ON c.region_id = r.id
-                JOIN country co ON r.country_id = co.id
-                WHERE a.id = ?
-            """, (address_id,))
-            row = cursor.fetchone()
-            if row:
-                return self._row_to_address(row)
+        with self.get_session() as session:
+            a = session.get(Address, address_id, options=[
+                joinedload(Address.city).joinedload(City.region).joinedload(Region.country)
+            ])
+            if a:
+                address = Address(
+                    id=a.id, city_id=a.city_id, street=a.street,
+                    house=a.house, apartment=a.apartment, client_name=a.client_name
+                )
+                if a.city:
+                    address._city_name = a.city.name
+                    if a.city.region:
+                        address._region_name = a.city.region.name
+                        if a.city.region.country:
+                            address._country_name = a.city.region.country.name
+                return address
             return None
-    
-    def _row_to_address(self, row) -> Address:
-        """Преобразовать строку базы данных в объект Address."""
-        return Address(
-            id=row['id'],
-            city_id=row['city_id'],
-            street=row['street'],
-            house=row['house'] or "",
-            apartment=row['apartment'] or "",
-            client_name=row['client_name'] or "",
-            city_name=row['city_name'],
-            region_name=row['region_name'],
-            country_name=row['country_name']
-        )
     
     def add_address(self, address: Address) -> int:
         """Добавить новый адрес и вернуть его ID."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                """INSERT INTO address (city_id, street, house, apartment, client_name) 
-                   VALUES (?, ?, ?, ?, ?)""",
-                (address.city_id, address.street, address.house or None, 
-                 address.apartment or None, address.client_name or None)
+        with self.get_session() as session:
+            new_address = Address(
+                city_id=address.city_id, street=address.street,
+                house=address.house, apartment=address.apartment, client_name=address.client_name
             )
-            return cursor.lastrowid
+            session.add(new_address)
+            session.flush()
+            return new_address.id
     
     def update_address(self, address: Address) -> bool:
         """Обновить существующий адрес. Возвращает True при успехе."""
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                """UPDATE address SET city_id = ?, street = ?, house = ?, 
-                   apartment = ?, client_name = ? WHERE id = ?""",
-                (address.city_id, address.street, address.house or None,
-                 address.apartment or None, address.client_name or None, address.id)
-            )
-            return cursor.rowcount > 0
+        with self.get_session() as session:
+            existing = session.get(Address, address.id)
+            if existing:
+                existing.city_id = address.city_id
+                existing.street = address.street
+                existing.house = address.house
+                existing.apartment = address.apartment
+                existing.client_name = address.client_name
+                return True
+            return False
     
     def delete_address(self, address_id: int) -> bool:
         """Удалить адрес по ID. Возвращает True при успехе."""
-        with self.get_cursor() as cursor:
-            cursor.execute("DELETE FROM address WHERE id = ?", (address_id,))
-            return cursor.rowcount > 0
+        with self.get_session() as session:
+            address = session.get(Address, address_id)
+            if address:
+                session.delete(address)
+                return True
+            return False
     
     def search_addresses_by_client(self, client_name: str) -> List[Address]:
         """Поиск адресов по имени клиента."""
-        with self.get_cursor() as cursor:
-            cursor.execute("""
-                SELECT a.id, a.city_id, a.street, a.house, a.apartment, a.client_name,
-                       c.name as city_name, r.name as region_name, co.name as country_name
-                FROM address a
-                JOIN city c ON a.city_id = c.id
-                JOIN region r ON c.region_id = r.id
-                JOIN country co ON r.country_id = co.id
-                WHERE a.client_name LIKE ?
-                ORDER BY a.client_name, a.street
-            """, (f"%{client_name}%",))
-            return [self._row_to_address(row) for row in cursor.fetchall()]
+        with self.get_session() as session:
+            stmt = select(Address).options(
+                joinedload(Address.city).joinedload(City.region).joinedload(Region.country)
+            ).where(
+                Address.client_name.ilike(f"%{client_name}%")
+            ).order_by(Address.client_name, Address.street)
+            addresses = []
+            for a in session.scalars(stmt).all():
+                address = Address(
+                    id=a.id, city_id=a.city_id, street=a.street,
+                    house=a.house, apartment=a.apartment, client_name=a.client_name
+                )
+                if a.city:
+                    address._city_name = a.city.name
+                    if a.city.region:
+                        address._region_name = a.city.region.name
+                        if a.city.region.country:
+                            address._country_name = a.city.region.country.name
+                addresses.append(address)
+            return addresses
     
     def search_addresses(self, query: str) -> List[Address]:
         """Поиск адресов по имени клиента, улице или городу."""
-        with self.get_cursor() as cursor:
-            cursor.execute("""
-                SELECT a.id, a.city_id, a.street, a.house, a.apartment, a.client_name,
-                       c.name as city_name, r.name as region_name, co.name as country_name
-                FROM address a
-                JOIN city c ON a.city_id = c.id
-                JOIN region r ON c.region_id = r.id
-                JOIN country co ON r.country_id = co.id
-                WHERE a.client_name LIKE ? OR a.street LIKE ? OR c.name LIKE ?
-                ORDER BY a.client_name, a.street
-            """, (f"%{query}%", f"%{query}%", f"%{query}%"))
-            return [self._row_to_address(row) for row in cursor.fetchall()]
+        with self.get_session() as session:
+            # Используем join для поиска по названию города
+            stmt = select(Address).join(City).options(
+                joinedload(Address.city).joinedload(City.region).joinedload(Region.country)
+            ).where(
+                or_(
+                    Address.client_name.ilike(f"%{query}%"),
+                    Address.street.ilike(f"%{query}%"),
+                    City.name.ilike(f"%{query}%")
+                )
+            ).order_by(Address.client_name, Address.street)
+            addresses = []
+            for a in session.scalars(stmt).all():
+                address = Address(
+                    id=a.id, city_id=a.city_id, street=a.street,
+                    house=a.house, apartment=a.apartment, client_name=a.client_name
+                )
+                if a.city:
+                    address._city_name = a.city.name
+                    if a.city.region:
+                        address._region_name = a.city.region.name
+                        if a.city.region.country:
+                            address._country_name = a.city.region.country.name
+                addresses.append(address)
+            return addresses
     
     # ==================== Вспомогательные методы ====================
     
@@ -366,29 +410,21 @@ class DatabaseManager:
         Получить полный путь местоположения для города.
         Возвращает (название_страны, название_региона, название_города).
         """
-        with self.get_cursor() as cursor:
-            cursor.execute("""
-                SELECT co.name as country_name, r.name as region_name, c.name as city_name
-                FROM city c
-                JOIN region r ON c.region_id = r.id
-                JOIN country co ON r.country_id = co.id
-                WHERE c.id = ?
-            """, (city_id,))
-            row = cursor.fetchone()
-            if row:
-                return (row['country_name'], row['region_name'], row['city_name'])
+        with self.get_session() as session:
+            city = session.get(City, city_id, options=[
+                joinedload(City.region).joinedload(Region.country)
+            ])
+            if city and city.region and city.region.country:
+                return (city.region.country.name, city.region.name, city.name)
             return (None, None, None)
     
     def get_statistics(self) -> dict:
         """Получить статистику базы данных."""
-        with self.get_cursor() as cursor:
-            stats = {}
-            cursor.execute("SELECT COUNT(*) FROM country")
-            stats['countries'] = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM region")
-            stats['regions'] = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM city")
-            stats['cities'] = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM address")
-            stats['addresses'] = cursor.fetchone()[0]
+        with self.get_session() as session:
+            stats = {
+                'countries': session.scalar(select(func.count()).select_from(Country)),
+                'regions': session.scalar(select(func.count()).select_from(Region)),
+                'cities': session.scalar(select(func.count()).select_from(City)),
+                'addresses': session.scalar(select(func.count()).select_from(Address))
+            }
             return stats

@@ -114,9 +114,8 @@ class RegionPage(BasePage):
             id_item.setData(Qt.ItemDataRole.UserRole, region.id)
             self.table.setItem(row, 0, id_item)
             
-            # Название страны
-            country = self.db_manager.get_country_by_id(region.country_id)
-            country_item = QTableWidgetItem(country.name if country else "")
+            # Название страны (используем property)
+            country_item = QTableWidgetItem(region.country_name)
             self.table.setItem(row, 1, country_item)
             
             # Название региона

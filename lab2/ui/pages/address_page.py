@@ -5,7 +5,7 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, 
     QLabel, QPushButton, QTableWidget, QTableWidgetItem,
-    QComboBox, QTextEdit, QGroupBox, QFormLayout
+    QComboBox
 )
 from PyQt6.QtCore import Qt
 from typing import List, Optional
@@ -99,14 +99,8 @@ class AddressDialog(QDialog):
         cities = self.db_manager.get_all_cities()
         self.city_combo.clear()
         for city in cities:
-            region = self.db_manager.get_region_by_id(city.region_id)
-            region_name = region.name if region else ""
-            country_name = ""
-            if region:
-                country = self.db_manager.get_country_by_id(region.country_id)
-                country_name = country.name if country else ""
             self.city_combo.addItem(
-                f"{city.name} ({region_name}, {country_name})",
+                f"{city.name} ({city.region_name}, {city.country_name})",
                 city.id
             )
     
@@ -117,9 +111,9 @@ class AddressDialog(QDialog):
             id=self.address.id,
             city_id=city_id,
             street=self.street_input.text().strip(),
-            house=self.house_input.text().strip(),
-            apartment=self.apartment_input.text().strip(),
-            client_name=self.client_input.text().strip()
+            house=self.house_input.text().strip() or None,
+            apartment=self.apartment_input.text().strip() or None,
+            client_name=self.client_input.text().strip() or None
         )
 
 
@@ -157,16 +151,14 @@ class AddressPage(BasePage):
             client_item = QTableWidgetItem(address.client_name or "")
             self.table.setItem(row, 1, client_item)
             
-            # Страна
-            country_item = QTableWidgetItem(address.country_name or "")
+            # Данные о местоположении (используем properties)
+            country_item = QTableWidgetItem(address.country_name)
             self.table.setItem(row, 2, country_item)
             
-            # Регион
-            region_item = QTableWidgetItem(address.region_name or "")
+            region_item = QTableWidgetItem(address.region_name)
             self.table.setItem(row, 3, region_item)
             
-            # Город
-            city_item = QTableWidgetItem(address.city_name or "")
+            city_item = QTableWidgetItem(address.city_name)
             self.table.setItem(row, 4, city_item)
             
             # Улица
