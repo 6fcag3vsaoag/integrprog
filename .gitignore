@@ -177,6 +177,7 @@ lab*/__pycache__/
 lab*/*/__pycache__/
 lab*/.venv/
 lab*/.pytest_cache/
+lab*/*.docx
 
 # ============================================================
 # Reports (uncomment to ignore DOCX in repo)
