@@ -1,0 +1,200 @@
+# ============================================================
+# Python
+# ============================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ============================================================
+# Virtual Environments
+# ============================================================
+.venv/
+venv/
+ENV/
+env/
+.env/
+
+# ============================================================
+# pytest
+# ============================================================
+.pytest_cache/
+.pytest_cache/*
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ============================================================
+# PyQt / Qt
+# ============================================================
+# Qt generated files
+*.ui.py
+*.ui.autosave
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qrc.py
+
+# Qt Creator
+*.pro.user
+*.pro.user.*
+
+# PyQt resource files
+*_rc.py
+
+# ============================================================
+# DOCX / Word Documents
+# ============================================================
+# Temporary Word files
+~$*.doc*
+~$*.docx
+*.tmp
+
+# Auto-save files
+*.wbk
+*.asd
+
+# ============================================================
+# IDE and Editors
+# ============================================================
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# ============================================================
+# OS Generated Files
+# ============================================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================================
+# Logs and Databases
+# ============================================================
+*.log
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+
+# ============================================================
+# Jupyter Notebooks
+# ============================================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ============================================================
+# MyPy / Type checking
+# ============================================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ============================================================
+# Project-specific: Lab folders structure
+# ============================================================
+# Keep folder structure but ignore compiled files in labs
+# lab01/
+# lab02/
+# lab03/
+# lab04/
+# lab05/
+# lab06/
+# lab07/
+# lab08/
+# lab09/
+# lab10/
+
+# Ignore all compiled Python in any lab folder
+lab*/__pycache__/
+lab*/*/__pycache__/
+lab*/.venv/
+lab*/.pytest_cache/
+
+# ============================================================
+# Reports (uncomment to ignore DOCX in repo)
+# ============================================================
+# *.docx
+# *.doc
+# *.pdf
+
+# ============================================================
+# Archives (usually not needed in repo)
+# ============================================================
+# *.zip
+# *.tar.gz
+# *.rar
+# *.7z
+
+
+# UV
+.venv/
+uv.lock
+uv.lock
