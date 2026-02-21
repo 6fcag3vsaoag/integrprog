@@ -8,7 +8,7 @@ from typing import Optional, List
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine, select, func, or_
-from sqlalchemy.orm import Session, sessionmaker, joinedload
+from sqlalchemy.orm import sessionmaker, joinedload
 
 from .base import Base
 from .models import Country, Region, City, Address

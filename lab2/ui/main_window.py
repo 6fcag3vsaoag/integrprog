@@ -6,9 +6,8 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStackedWidget, QStatusBar,
-    QMenuBar, QMenu, QMessageBox
+    QMessageBox
 )
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 
 from database import DatabaseManager

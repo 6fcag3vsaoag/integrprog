@@ -4,7 +4,7 @@
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, 
-    QLabel, QPushButton, QTableWidget, QTableWidgetItem
+    QLabel, QPushButton, QTableWidgetItem
 )
 from PyQt6.QtCore import Qt
 from typing import List

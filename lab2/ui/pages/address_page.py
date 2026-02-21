@@ -4,14 +4,14 @@
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, 
-    QLabel, QPushButton, QTableWidget, QTableWidgetItem,
+    QLabel, QPushButton, QTableWidgetItem,
     QComboBox
 )
 from PyQt6.QtCore import Qt
-from typing import List, Optional
+from typing import List
 
 from .base_page import BasePage
-from database.models import Address, City
+from database.models import Address
 
 
 class AddressDialog(QDialog):

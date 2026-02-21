@@ -4,7 +4,7 @@
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QLineEdit, QTableWidget, QTableWidgetItem, QMessageBox,
+    QLineEdit, QTableWidget, QMessageBox,
     QLabel, QHeaderView, QAbstractItemView
 )
 from PyQt6.QtCore import Qt, pyqtSignal
